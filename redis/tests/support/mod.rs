@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::path::Path;
 use std::{
     env, fs, io, net::SocketAddr, net::TcpListener, path::PathBuf, process, thread::sleep,
     time::Duration,
@@ -46,6 +47,9 @@ pub use self::cluster::*;
 
 #[cfg(any(feature = "cluster", feature = "cluster-async"))]
 pub use self::mock_cluster::*;
+
+mod sentinel;
+pub use self::sentinel::*;
 
 #[derive(PartialEq)]
 enum ServerType {
@@ -114,7 +118,7 @@ impl RedisServer {
                 redis::ConnectionAddr::Unix(PathBuf::from(&path))
             }
         };
-        RedisServer::new_with_addr(addr, None, modules, |cmd| {
+        RedisServer::new_with_addr(addr, None, None, modules, |cmd| {
             cmd.spawn()
                 .unwrap_or_else(|err| panic!("Failed to run {cmd:?}: {err}"))
         })
@@ -122,11 +126,16 @@ impl RedisServer {
 
     pub fn new_with_addr<F: FnOnce(&mut process::Command) -> process::Child>(
         addr: redis::ConnectionAddr,
+        config_file: Option<&Path>,
         tls_paths: Option<TlsFilePaths>,
         modules: &[Module],
         spawner: F,
     ) -> RedisServer {
         let mut redis_cmd = process::Command::new("redis-server");
+
+        if let Some(config_path) = config_file {
+            redis_cmd.arg(config_path);
+        }
 
         // Load Redis Modules
         for module in modules {
